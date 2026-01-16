@@ -210,6 +210,7 @@ export const handler = async (event: any) => {
           purchases 
         }) 
       };
+    }
 
     return { statusCode: 404, body: JSON.stringify({ error: 'Endpoint Not Found' }) };
   } catch (error: any) {
