@@ -92,6 +92,11 @@ const App: React.FC = () => {
   const [chatInput, setChatInput] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [premiumCode, setPremiumCode] = useState('');
+  const [generationsRemaining, setGenerationsRemaining] = useState(3);
+  const [nextResetTime, setNextResetTime] = useState<Date | null>(null);
+  const [showFloatingChat, setShowFloatingChat] = useState(false);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [timeUntilReset, setTimeUntilReset] = useState<string>('');
 
   useEffect(() => {
     const savedUser = localStorage.getItem('samp_user');
@@ -99,8 +104,59 @@ const App: React.FC = () => {
       const parsedUser = JSON.parse(savedUser);
       setUser(parsedUser);
       setConfig(prev => ({ ...prev, authorName: parsedUser.username }));
+      
+      // Load generation tracking for non-premium users
+      if (!parsedUser.isPremium) {
+        const lastReset = localStorage.getItem(`${parsedUser.username}_lastReset`);
+        const remaining = localStorage.getItem(`${parsedUser.username}_generationsRemaining`);
+        
+        const now = new Date();
+        if (lastReset) {
+          const lastResetDate = new Date(lastReset);
+          const nextReset = new Date(lastResetDate);
+          nextReset.setDate(nextReset.getDate() + 1);
+          
+          if (now >= nextReset) {
+            setGenerationsRemaining(3);
+            localStorage.setItem(`${parsedUser.username}_lastReset`, now.toISOString());
+            localStorage.setItem(`${parsedUser.username}_generationsRemaining`, '3');
+            setNextResetTime(null);
+          } else {
+            setGenerationsRemaining(remaining ? parseInt(remaining) : 3);
+            setNextResetTime(nextReset);
+          }
+        } else {
+          localStorage.setItem(`${parsedUser.username}_lastReset`, now.toISOString());
+          localStorage.setItem(`${parsedUser.username}_generationsRemaining`, '3');
+        }
+      }
     }
   }, []);
+
+  // Update countdown timer for generation reset
+  useEffect(() => {
+    if (!nextResetTime) return;
+    
+    const interval = setInterval(() => {
+      const now = new Date();
+      const diff = nextResetTime.getTime() - now.getTime();
+      
+      if (diff <= 0) {
+        setGenerationsRemaining(3);
+        setNextResetTime(null);
+        if (user) {
+          localStorage.setItem(`${user.username}_generationsRemaining`, '3');
+        }
+        clearInterval(interval);
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        setTimeUntilReset(`${hours}h ${minutes}m`);
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [nextResetTime, user]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +208,8 @@ const App: React.FC = () => {
   const logout = () => {
     setUser(null);
     setHistory([]);
+    setGenerationsRemaining(3);
+    setNextResetTime(null);
     localStorage.removeItem('samp_user');
     setActiveModal(null);
   };
@@ -253,6 +311,18 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    // Check if user is logged in
+    if (!user) {
+      setActiveModal('auth');
+      return;
+    }
+
+    // Check generation limits for non-premium users
+    if (!user.isPremium && generationsRemaining <= 0) {
+      setShowPremiumModal(true);
+      return;
+    }
+
     const prompt = `### EXPERT PAWN ARCHITECT: SYSTEM SPECIFICATION
 **Lead Engineer:** ${config.authorName}
 **Environment:** ${config.version}
@@ -278,28 +348,40 @@ Generate complete, production-ready PAWN source code.`;
     
     setGeneratedPrompt(prompt);
 
-    if (user) {
-      try {
-        await fetch('/.netlify/functions/api', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            action: 'save_prompt', 
-            username: user.username, 
-            prompt, 
-            config 
-          })
-        });
-        const newItem: HistoryItem = {
-          id: Date.now().toString(),
-          prompt,
-          config: { ...config },
-          timestamp: new Date().toLocaleString()
-        };
-        setHistory([newItem, ...history].slice(0, 50));
-      } catch (e) {
-        console.error("Cloud sync failed.");
+    // Decrement generation count for non-premium users
+    if (!user.isPremium) {
+      const newCount = generationsRemaining - 1;
+      setGenerationsRemaining(newCount);
+      localStorage.setItem(`${user.username}_generationsRemaining`, newCount.toString());
+      
+      if (newCount === 0 && !nextResetTime) {
+        const now = new Date();
+        const nextReset = new Date(now);
+        nextReset.setDate(nextReset.getDate() + 1);
+        setNextResetTime(nextReset);
       }
+    }
+
+    try {
+      await fetch('/.netlify/functions/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'save_prompt', 
+          username: user.username, 
+          prompt, 
+          config 
+        })
+      });
+      const newItem: HistoryItem = {
+        id: Date.now().toString(),
+        prompt,
+        config: { ...config },
+        timestamp: new Date().toLocaleString()
+      };
+      setHistory([newItem, ...history].slice(0, 50));
+    } catch (e) {
+      console.error("Cloud sync failed.");
     }
   };
 
@@ -339,7 +421,6 @@ Generate complete, production-ready PAWN source code.`;
           <nav className="hidden sm:flex gap-6 items-center">
             <button onClick={() => setActiveModal('templates')} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all cursor-pointer">Designs</button>
             <button onClick={() => setActiveModal('history')} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all cursor-pointer">Archive</button>
-            {user && <button onClick={() => setActiveModal('chat')} className="text-[10px] font-black uppercase tracking-widest text-orange-500 hover:text-orange-400 transition-all cursor-pointer">Chat Support</button>}
           </nav>
           
           <div className="h-8 w-[1px] bg-slate-800" />
@@ -384,9 +465,20 @@ Generate complete, production-ready PAWN source code.`;
               </InputField>
             </div>
 
-            <button onClick={handleGenerate} className="w-full bg-gradient-to-br from-orange-500 to-orange-700 hover:from-orange-400 hover:to-orange-600 text-white font-black py-4 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-3 mt-8 active:scale-[0.96] uppercase tracking-[0.2em] text-[10px]">
-              <ICONS.Zap /> Deploy Spec
-            </button>
+            <div className="space-y-3 mt-8">
+              <button onClick={handleGenerate} disabled={!user} className="w-full bg-gradient-to-br from-orange-500 to-orange-700 hover:from-orange-400 hover:to-orange-600 disabled:from-slate-700 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-black py-4 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-3 active:scale-[0.96] uppercase tracking-[0.2em] text-[10px]">
+                <ICONS.Zap /> Deploy Spec
+              </button>
+              {user && !user.isPremium && (
+                <div className="bg-slate-900/50 border border-slate-800 p-3 rounded-xl text-center">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Daily Generations</p>
+                  <p className="text-[10px] font-black text-orange-400">{generationsRemaining}/3 Available</p>
+                  {generationsRemaining === 0 && timeUntilReset && (
+                    <p className="text-[8px] text-slate-500 mt-2">Resets in {timeUntilReset}</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -495,62 +587,129 @@ Generate complete, production-ready PAWN source code.`;
         </div>
       </Modal>
 
-      <Modal isOpen={activeModal === 'chat'} onClose={() => setActiveModal(null)} title="Chat Support">
-        <div className="flex flex-col gap-4 h-96">
-          <div className="flex-1 overflow-auto space-y-3 bg-slate-950/50 p-4 rounded-xl custom-scrollbar">
-            {chatMessages.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-slate-700 text-[10px] text-center">
-                <p>Send code via chat or redeem a premium key below.</p>
-              </div>
-            ) : (
-              chatMessages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-xs px-4 py-2 rounded-xl text-[10px] ${msg.sender === 'user' ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
-                    <p>{msg.text}</p>
-                    <span className="text-[8px] opacity-70 mt-1 block">{msg.timestamp}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-3 border-t border-slate-800 pt-4">
-            <form onSubmit={handleSendChat} className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Send code message..."
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-orange-500/20"
-              />
-              <button
-                type="submit"
-                disabled={isSendingChat || !generatedPrompt}
-                className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl transition-all"
-              >
-                Send
-              </button>
-            </form>
-
-            <div className="border-t border-slate-800 pt-4">
-              <p className="text-[9px] font-black text-slate-500 uppercase mb-2">Redeem Premium Code</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={premiumCode}
-                  onChange={(e) => setPremiumCode(e.target.value)}
-                  placeholder="Enter premium key..."
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-orange-500/20"
-                />
-                <button
-                  onClick={handleRedeemCode}
-                  disabled={isSendingChat || !premiumCode.trim()}
-                  className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-[9px] font-black uppercase px-4 py-2 rounded-xl transition-all"
-                >
-                  Redeem
+      {/* Floating Chat Widget */}
+      {user && (
+        <div className="fixed bottom-6 right-6 z-40">
+          {showFloatingChat ? (
+            <div className="bg-[#0b1121] border border-slate-800 w-80 h-96 rounded-[2rem] shadow-2xl flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/20">
+                <h3 className="text-xs font-black text-white uppercase tracking-tighter">Chat Support</h3>
+                <button onClick={() => setShowFloatingChat(false)} className="text-slate-500 hover:text-white transition-all">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
               </div>
+              <div className="flex-1 overflow-auto space-y-3 bg-slate-950/50 p-4 custom-scrollbar">
+                {chatMessages.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-slate-700 text-[9px] text-center">
+                    <p>Send code or redeem a premium key.</p>
+                  </div>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-xs px-3 py-2 rounded-lg text-[9px] ${msg.sender === 'user' ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                        <p>{msg.text}</p>
+                        <span className="text-[7px] opacity-70 mt-1 block">{msg.timestamp}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="space-y-2 border-t border-slate-800 p-3">
+                <form onSubmit={handleSendChat} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Send code..."
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[8px] text-white outline-none focus:ring-1 focus:ring-orange-500/20"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSendingChat || !generatedPrompt}
+                    className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-[7px] font-black uppercase px-3 py-1.5 rounded-lg transition-all"
+                  >
+                    Send
+                  </button>
+                </form>
+                <div className="border-t border-slate-800 pt-2">
+                  <p className="text-[7px] font-black text-slate-500 uppercase mb-1">Redeem Code</p>
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      value={premiumCode}
+                      onChange={(e) => setPremiumCode(e.target.value)}
+                      placeholder="Key..."
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[8px] text-white outline-none focus:ring-1 focus:ring-orange-500/20"
+                    />
+                    <button
+                      onClick={handleRedeemCode}
+                      disabled={isSendingChat || !premiumCode.trim()}
+                      className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-[7px] font-black uppercase px-2.5 py-1 rounded-lg transition-all"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
+          ) : (
+            <button
+              onClick={() => setShowFloatingChat(true)}
+              className="w-14 h-14 bg-orange-600 hover:bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center text-lg transition-all active:scale-95 animate-pulse"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Premium Purchase Modal */}
+      <Modal isOpen={showPremiumModal} onClose={() => setShowPremiumModal(false)} title="Upgrade to Premium">
+        <div className="text-center space-y-6">
+          <div className="bg-gradient-to-br from-orange-600/10 to-orange-800/10 border border-orange-500/20 p-6 rounded-2xl">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Daily Limit Reached</p>
+            <p className="text-sm text-slate-300 mb-4">You've used all 3 daily generations. Upgrade to premium for unlimited generations.</p>
+            <div className="text-3xl font-black text-orange-500 mb-2">$9.99</div>
+            <p className="text-[9px] text-slate-500 uppercase tracking-widest">Lifetime Access</p>
+          </div>
+          
+          <div className="space-y-3 text-left">
+            <div className="flex gap-3 items-start">
+              <div className="w-5 h-5 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-white uppercase">Unlimited Generations</p>
+                <p className="text-[9px] text-slate-500">Generate code specs without daily limits</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <div className="w-5 h-5 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-white uppercase">Cloud Sync</p>
+                <p className="text-[9px] text-slate-500">Access all your generated specs from any device</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <div className="w-5 h-5 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-white uppercase">Priority Support</p>
+                <p className="text-[9px] text-slate-500">Get faster responses from our team</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-slate-800 pt-6">
+            <button className="w-full bg-gradient-to-br from-orange-500 to-orange-700 hover:from-orange-400 hover:to-orange-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-lg">
+              Purchase Premium Now
+            </button>
+            <button onClick={() => setShowPremiumModal(false)} className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-black py-3 rounded-xl uppercase tracking-widest text-[9px] transition-all">
+              Maybe Later
+            </button>
           </div>
         </div>
       </Modal>
