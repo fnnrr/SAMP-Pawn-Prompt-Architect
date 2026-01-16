@@ -60,9 +60,26 @@ CREATE TABLE IF NOT EXISTS prompt_history (
   FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
 );
 
+-- Admin keys table
+CREATE TABLE IF NOT EXISTS admin_keys (
+  id SERIAL PRIMARY KEY,
+  key VARCHAR(255) UNIQUE NOT NULL,
+  admin_name VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'active', -- active, inactive
+  permissions TEXT, -- JSON array of permissions
+  created_at TIMESTAMP DEFAULT NOW(),
+  last_used TIMESTAMP
+);
+
+-- Insert default admin key
+INSERT INTO admin_keys (key, admin_name, status, permissions) 
+VALUES ('juckiumartumana11', 'Super Admin', 'active', '["approve_purchases", "reject_purchases", "manage_keys", "view_dashboard"]')
+ON CONFLICT (key) DO NOTHING;
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_premium_keys_status ON premium_keys(status);
 CREATE INDEX IF NOT EXISTS idx_chat_history_username ON chat_history(username);
 CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases(status);
 CREATE INDEX IF NOT EXISTS idx_prompt_history_username ON prompt_history(username);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_admin_keys_key ON admin_keys(key);

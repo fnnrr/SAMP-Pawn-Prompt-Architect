@@ -2,6 +2,27 @@
 import { neon } from '@neondatabase/serverless';
 import crypto from 'crypto';
 
+// Helper function to validate admin key from database
+const validateAdminKey = async (sql: any, adminKey: string): Promise<boolean> => {
+  try {
+    const result = await sql`
+      SELECT * FROM admin_keys WHERE key = ${adminKey} AND status = 'active'
+    `;
+    
+    if (result.length > 0) {
+      // Update last_used timestamp
+      await sql`
+        UPDATE admin_keys SET last_used = NOW() WHERE key = ${adminKey}
+      `;
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Admin key validation error:', error);
+    return false;
+  }
+};
+
 export const handler = async (event: any) => {
   const dbUrl = process.env.DATABASE_URL;
   
@@ -122,9 +143,9 @@ export const handler = async (event: any) => {
     if (httpMethod === 'POST' && body.action === 'generate_premium_key') {
       const { admin_key } = body;
       
-      // Validate admin key (should be from env)
-      if (admin_key !== process.env.ADMIN_KEY) {
-        return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
+      // Validate admin key from database
+      if (!await validateAdminKey(sql, admin_key)) {
+        return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized - Invalid admin key' }) };
       }
 
       const newKey = `PRM-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
@@ -136,7 +157,7 @@ export const handler = async (event: any) => {
       return { 
         statusCode: 200, 
         body: JSON.stringify({ 
-          success: true, 
+          success: true,
           key: newKey,
           message: 'Premium key generated successfully.'
         }) 
@@ -147,8 +168,8 @@ export const handler = async (event: any) => {
     if (httpMethod === 'POST' && body.action === 'validate_purchase') {
       const { admin_key, purchase_id, status, reason } = body;
 
-      if (admin_key !== process.env.ADMIN_KEY) {
-        return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
+      if (!await validateAdminKey(sql, admin_key)) {
+        return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized - Invalid admin key' }) };
       }
 
       if (status === 'approved') {
@@ -195,8 +216,8 @@ export const handler = async (event: any) => {
     if (httpMethod === 'GET' && body.action === 'get_pending_purchases') {
       const { admin_key } = body;
 
-      if (admin_key !== process.env.ADMIN_KEY) {
-        return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
+      if (!await validateAdminKey(sql, admin_key)) {
+        return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized - Invalid admin key' }) };
       }
 
       const purchases = await sql`
