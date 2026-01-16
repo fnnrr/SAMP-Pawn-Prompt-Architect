@@ -1,0 +1,5 @@
+{
+  "name": "SAMP Pawn Prompt Architect",
+  "description": "A high-end prompt engineering tool for GTA San Andreas Multiplayer (SAMP) developers to generate precise AI prompts for Gamemodes, Filterscripts, and Includes.",
+  "requestFramePermissions": []
+}
