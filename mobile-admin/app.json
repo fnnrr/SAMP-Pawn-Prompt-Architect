@@ -6,19 +6,15 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.samparchitect.admin"
-    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#050811"
       },
-      "package": "com.samparchitect.admin"
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+      "package": "com.samparchitect.admin",
+      "permissions": [
+        "android.permission.INTERNET"
+      ]
     },
     "plugins": [
       "expo-camera",

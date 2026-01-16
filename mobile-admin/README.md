@@ -1,4 +1,4 @@
-# SAMP Architect Mobile Admin App
+# SAMP Architect Mobile Admin App (Android)
 
 React Native mobile admin dashboard for managing purchases and premium codes.
 
@@ -9,22 +9,52 @@ React Native mobile admin dashboard for managing purchases and premium codes.
 - **Purchase Management** - View, approve, and reject purchases
 - **Premium Key Generation** - Generate new premium codes on demand
 - **Secure Storage** - Admin keys stored securely using Expo SecureStore
+- **Android Native** - Optimized for Android devices
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 16+
-- npm or yarn
-- Expo CLI: `npm install -g expo-cli`
+- npm
+- Android Studio (for building APK) or Android device with Expo Go
+- Android SDK installed
 
 ### Installation
 
 ```bash
-npm install
+cd mobile-admin
+npm install --legacy-peer-deps
 ```
 
-### Configuration
+### Running on Android Device
+
+**Option 1: Using Expo Go (Easiest)**
+1. Install [Expo Go](https://play.google.com/store/apps/details?id=host.exp.exponent) on your Android device
+2. Run:
+   ```bash
+   npm start
+   ```
+3. Scan the QR code with your phone's camera or Expo Go app
+
+**Option 2: Using Android Emulator**
+1. Open Android Studio
+2. Create/start an Android emulator
+3. Run:
+   ```bash
+   npm start
+   ```
+4. Press `a` in the terminal to open in emulator
+
+### Building APK for Production
+
+```bash
+# Requires EAS CLI setup
+npm install -g eas-cli
+eas build --platform android
+```
+
+## Configuration
 
 1. Update the API base URL in `services/api.ts`:
 ```typescript
@@ -32,35 +62,6 @@ const API_BASE = 'https://your-netlify-domain/.netlify/functions/api';
 ```
 
 2. Default admin key (set in database): `juckiumartumana11`
-
-### Running Locally
-
-**Web:**
-```bash
-npm run web
-```
-
-**iOS:**
-```bash
-npm run ios
-```
-
-**Android:**
-```bash
-npm run android
-```
-
-### Building for Production
-
-**Android:**
-```bash
-npm run build:android
-```
-
-**iOS:**
-```bash
-npm run build:ios
-```
 
 ## Project Structure
 
@@ -100,29 +101,25 @@ mobile-admin/
 - Logout functionality
 - Secure API communication
 
-## API Integration
-
-The app communicates with the main Netlify backend API:
-
-- `get_pending_purchases` - Fetch pending/all purchases
-- `validate_purchase` - Approve or reject a purchase
-- `generate_premium_key` - Generate new premium codes
-
 ## Troubleshooting
 
-**API Connection Issues:**
-- Ensure your Netlify domain is correctly set in `services/api.ts`
-- Check that DATABASE_URL is set in Netlify environment variables
-- Verify ADMIN_KEY environment variable matches database
+**Android Emulator Won't Start:**
+- Ensure virtualization is enabled in BIOS
+- Close other applications using significant RAM
+- Check Android SDK is properly installed
 
-**Auth Issues:**
-- Clear app cache: `expo web --clear`
-- Reinstall dependencies: `rm -rf node_modules && npm install`
+**App Won't Connect to API:**
+- Verify API URL in `services/api.ts`
+- Check device/emulator has internet access
+- Ensure Netlify backend is running and accessible
 
-**iOS Build:**
-- Ensure Xcode is installed: `xcode-select --install`
-- Update pods: `cd ios && pod install && cd ..`
+**Expo Go Issues:**
+- Clear app cache: Settings > Apps > Expo Go > Clear Cache
+- Reinstall Expo Go app
+- Update to latest Expo version
 
-**Android Build:**
-- Ensure Android SDK is installed
-- Set ANDROID_HOME environment variable
+**Build Issues:**
+- Clear node_modules: `rm -r node_modules && npm install --legacy-peer-deps`
+- Clear Expo cache: `expo start --clear`
+- Check Node.js version: `node --version` (should be 16+)
+

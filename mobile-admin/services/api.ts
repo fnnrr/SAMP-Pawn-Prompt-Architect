@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'https://your-netlify-domain/.netlify/functions/api';
+const API_BASE = 'https://samp-architect.netlify.app/.netlify/functions/api';
 
 export const purchaseAPI = {
   getPendingPurchases: async (adminKey: string) => {
